@@ -27,13 +27,13 @@
 	</head>
 	<body>
 		<div class="container">
-		<h1>CS184/284A Spring 2025 Homework 3 Write-Up</h1>
-		<div style="text-align: center;">Names: </div>
+		<h1>CS184/284A Spring 2026 Homework 3 Write-Up</h1>
+		<div style="text-align: center;">Names: Mohan Xu and Afreen Shameem</div>
 
 		<br>
 
-		Link to webpage: (TODO) <a href="https://cs184.eecs.berkeley.edu/sp25">cs184.eecs.berkeley.edu/sp25</a>
-		Link to GitHub repository: (TODO) <a href="https://cs184.eecs.berkeley.edu/sp25">cs184.eecs.berkeley.edu/sp25</a>
+		Link to webpage: <a href="https://github.com/cal-cs184-student/hw-webpages-mohanxu98">https://github.com/cal-cs184-student/hw-webpages-mohanxu98</a><br>
+		Link to GitHub repository: <a href="https://github.com/cal-cs184-student/hw3-pathtracer-bo-ba">https://github.com/cal-cs184-student/hw3-pathtracer-bo-ba</a>
 		
 		<figure>
 			<img src="cornell.png" alt="Cornell Boxes with Bunnies" style="width:70%"/>
@@ -48,48 +48,350 @@
 		Give a high-level overview of what you implemented in this homework. Think about what you've built as a whole. Share your thoughts on what interesting things you've learned from completing the homework.
 
 		<h2>Part 1: Ray Generation and Scene Intersection</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+		<p>For the rendering pipeline, first we need to generate rays from the camera into the scene. The renderer treats the camera as a pinhole located at the camera origin in camera space. In front of this pinhole, we have a virtual sensor plane at z = -1 as with the diagram shown from spec. Each image sample corresponds to a point on this sensor plane, and a ray is formed by starting at the camera origin and passing through that point in the sensor plane.</p>
 
-		<p>Here is an example 2x2 gridlike structure using an HTML table. Each <b>tr</b> is a row and each <b>td</b> is a column in that row. You might find this useful for framing and showing your result images in an organized fashion.</p>
+		<p>In our implementation of <code>Ray Camera::generate_ray(double x, double y) const</code>, the input (x,y) is given in normalized image coordinates, where both values are within the [0,1] range. The bottom left corner of the image maps to the bottom left corner of the sensor plane, and vice versa for other corners. To convert this normalized coordinate into a point on the sensor, we first converted the horizontal and vertical field of view from degrees to radians. Then we scaled / recentered the sample with:</p>
+		<pre><code>double sensorX = (2 * x - 1) * tan(hFovRad / 2.0);
+double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
+
+		<p>This gives the sensor space point (sensorX, sensorY, -1) to match the actual size of the sensor. After normalizing this vector, we rotate it into world space with the camera to the world matrix, and use the camera position as the ray origin. We make sure to initialize the ray's valid t-range using near and far clipping planes. Once this ray is generated, it is tested against scene primitives such as triangles and spheres in parts 3, 4. For each primitive, the renderer checks whether the ray intersects it with the valid t range, and if it does, it updates the ray to keep the nearest hit. Therefore, ray generation determines where the camera is looking, and primitive intersection would determine what object is being "hit" upon and visible along that direction.</p>
+
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
 			  <tr>
 				<td style="text-align: center;">
-				  <img src="cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
+				  <img src="Part 1/CBempty.png" width="400px"/>
+				  <figcaption>Ray Triangle</figcaption>
 				</td>
 				<td style="text-align: center;">
-				  <img src="cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="cornell.png" width="400px"/>
-				  <figcaption>Caption goes here.</figcaption>
+				  <img src="Part 1/CBspheres.png" width="400px"/>
+				  <figcaption>Ray Sphere</figcaption>
 				</td>
 			  </tr>
 			</table>
 		</div>
-		
+
 		<h2>Part 2: Bounding Volume Hierarchy</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+		<h3>Task 1</h3>
+		<p>We built the BVH recursively over [start, end) range of primitives stored in BVHAccel::primitives.</p>
+
+		<p>For bounding box and leaves: for each call, we computed the axis aligned bounding box of all primitives in the range by unioning each primitive's get_bbox(). Then, we allocated a BVHNode with that box. If the number of primitives (n = end - start) is less than or equal to max_leaf_size, we assign the node as a leaf by setting start and end to those iterators so the leaf references exactly the primitives in this range, and return.</p>
+
+		<p>Otherwise, we split the axis. To do so, we compute a second box, the centroid bounds, by expanding around each primitive's get_bbox().centroid. Then, we take extent.x, y, z and choose the split axis with the largest spread. Spreading along the longest direction of the centroid would separate geometry more evenly in space than if we were to choose an arbitrary fixed axis.</p>
+
+		<p>After deciding the largest axis to split upon, we partition and assign children. We partition the range with std::nth_element so that primitives with centroid coordinate less than the median on the chosen axis lie in the left, and the rest on the right. We use mid = start + n/2 as the pivot. We chose a median split, because this keeps the BVH well-balanced (by definition of median) with an equal number of primitives on either side, leading to a tree depth with O(log n). We want the tree to be as balanced as possible, so it reduces the worst case number of node traversal during ray intersection, improving performance consistency which is the point of this task.</p>
+
+		<h3>Task 2</h3>
+		<p>In BBox::intersect, we implemented the slab method to test whether a ray intersects an axis-aligned bounding box. The box is treated as the intersection of three pairs of parallel planes (slabs), one pair per axis. For each axis, we compute the t values where the ray enters and exits that slab using tNear = (min[i] - ray.o[i]) / ray.d[i] and tFar = (max[i] - ray.o[i]) / ray.d[i]. We use the inverse of the ray direction to avoid repeated division. If the ray direction is negative along that axis, tNear and tFar are swapped so that tNear always represents the entry and tFar the exit.</p>
+
+		<p>We then progressively narrow the running intersection interval [t0, t1] by taking t0 = max(t0, tNear) and t1 = min(t1, tFar) for each axis. If at any point t0 > t1, the intervals no longer overlap and we immediately return false since the ray misses the box. If all three axes are processed without this condition triggering, the ray intersects the box within [t0, t1] and we return true with t0 and t1 updated to the entry and exit times.</p>
+
+		<h3>Task 3</h3>
+		<p>For BVH traversals, we implemented two functions intersect and has_intersection. While has_intersection checks whether any primitive in the BVH intersects the ray, intersect finds the closest intersection along the ray.</p>
+
+		<p>For both functions, we first test whether the ray intersects the node's bounding box using the slab method from Task 2, passing in the ray's current [min_t, max_t] interval. If the bounding box is missed, we immediately return false without touching any primitives inside.</p>
+
+		<p>If the node is a leaf, we iterate over all primitives in [node->start, node->end) and test each one individually. In has_intersection, we return true as soon as any primitive reports a hit. In intersect, we accumulate all hits and return whether any occurred, since each primitive's own intersect function updates both the Intersection struct and ray.max_t when it finds a closer hit, the closest intersection is tracked automatically without extra bookkeeping in the BVH.</p>
+
+		<p>If the node is an interior node, we recursively traverse both children. In has_intersection, we short-circuit and return true as soon as either child reports a hit. In intersect, we always traverse both children because a farther bounding box could still contain a closer primitive along the ray. The combined result is the OR of both children's return values, with ray.max_t continuously shrinking as closer hits are found, which also serves to prune traversal on subsequent box tests.</p>
+
+		<h3>Rendering Time Comparison</h3>
+		<p>For maxplanck.dae, rendering with BVH acceleration took 0.1255 seconds, compared to around 41 seconds without BVH, a roughly 327x speedup. For cow.dae, rendering with BVH took 0.00755 seconds, compared to 4.3492 seconds without BVH, a roughly 576x speedup. These results demonstrate the dramatic performance improvement from O(n) to O(log n) ray-primitive intersection complexity that BVH acceleration provides.</p>
+
+		<h3>Large Scene Renders (with BVH acceleration)</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 2/bunny.png" width="400px"/>
+				  <figcaption>Bunny (normal shading)</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 2/maxplanck.png" width="400px"/>
+				  <figcaption>Max Planck (normal shading)</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 3: Direct Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part3/hemisphere.png" width="400px"/>
+				  <figcaption>Hemisphere Sampling</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part3/importance.png" width="400px"/>
+				  <figcaption>Importance Sampling</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Light Sampling (varying number of light rays)</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part3/light sampling/l1.png" width="400px"/>
+				  <figcaption>1 Light Ray</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part3/light sampling/l4.png" width="400px"/>
+				  <figcaption>4 Light Rays</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part3/light sampling/l16.png" width="400px"/>
+				  <figcaption>16 Light Rays</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part3/light sampling/l64.png" width="400px"/>
+				  <figcaption>64 Light Rays</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 4: Global Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/global CBspheres.png" width="400px"/>
+				  <figcaption>Global Illumination, CBspheres</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/global CBbunny.png" width="400px"/>
+				  <figcaption>Global Illumination, CBbunny</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/Direct CBspheres.png" width="400px"/>
+				  <figcaption>Direct Illumination Only, CBspheres</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/Indirect CBspheres.png" width="400px"/>
+				  <figcaption>Indirect Illumination Only, CBspheres</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Accumulated Bounces (isAccumBounces=false)</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/false/m0.png" width="400px"/>
+				  <figcaption>Max Ray Depth 0</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/false/m1.png" width="400px"/>
+				  <figcaption>Max Ray Depth 1</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/false/m2.png" width="400px"/>
+				  <figcaption>Max Ray Depth 2</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/false/m4.png" width="400px"/>
+				  <figcaption>Max Ray Depth 4</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Accumulated Bounces (isAccumBounces=true)</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m0.png" width="400px"/>
+				  <figcaption>Max Ray Depth 0</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m1.png" width="400px"/>
+				  <figcaption>Max Ray Depth 1</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m2.png" width="400px"/>
+				  <figcaption>Max Ray Depth 2</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m3.png" width="400px"/>
+				  <figcaption>Max Ray Depth 3</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m4.png" width="400px"/>
+				  <figcaption>Max Ray Depth 4</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/AccumBounce/true/m5.png" width="400px"/>
+				  <figcaption>Max Ray Depth 5</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Russian Roulette (varying max ray depth)</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m0.png" width="400px"/>
+				  <figcaption>Max Ray Depth 0</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m1.png" width="400px"/>
+				  <figcaption>Max Ray Depth 1</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m2.png" width="400px"/>
+				  <figcaption>Max Ray Depth 2</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m3.png" width="400px"/>
+				  <figcaption>Max Ray Depth 3</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m4.png" width="400px"/>
+				  <figcaption>Max Ray Depth 4</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/Russian Roulette/m100.png" width="400px"/>
+				  <figcaption>Max Ray Depth 100</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Varying Sample-Per-Pixel Rates</h3>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s1.png" width="400px"/>
+				  <figcaption>1 Sample/Pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s2.png" width="400px"/>
+				  <figcaption>2 Samples/Pixel</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s4.png" width="400px"/>
+				  <figcaption>4 Samples/Pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s8.png" width="400px"/>
+				  <figcaption>8 Samples/Pixel</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s16.png" width="400px"/>
+				  <figcaption>16 Samples/Pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s64.png" width="400px"/>
+				  <figcaption>64 Samples/Pixel</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part4/samples/s1024.png" width="400px"/>
+				  <figcaption>1024 Samples/Pixel</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 5: Adaptive Sampling</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
-		<h2>(Optional) Part 6: Extra Credit Opportunities</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 5/bunny.png" width="400px"/>
+				  <figcaption>Bunny</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 5/bunny_rate.png" width="400px"/>
+				  <figcaption>Bunny Sample Rate</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 5/spheres.png" width="400px"/>
+				  <figcaption>Spheres</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 5/spheres_rate.png" width="400px"/>
+				  <figcaption>Spheres Sample Rate</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h2>(Optional) Part 6: Extra Credit: Jittered Sampler</h2>
+
+		<p>For extra credit, we implemented a jittered (stratified) pixel sampler as an alternative to the default uniform random sampler. Instead of placing all samples randomly within the pixel, we divide the pixel into an n×n grid of strata and place exactly one sample within each stratum, randomly positioned inside it. This guarantees better coverage of the pixel area, reducing the clumping and gaps that pure random sampling tends to produce.</p>
+
+		<p>At low sample counts, jittered sampling produces noticeably less noise and aliasing compared to uniform random sampling. At s=4, jittered sampling has less clumping noise because each pixel's 4 samples are placed in a 2×2 grid, preventing them from clustering together. Uniform's 4 random samples might all land near one corner of the pixel, leaving large areas unsampled. At s=16, jittered uses a 4×4 grid, giving better coverage of the unit square and producing smoother gradients on surfaces. At s=64, both methods converge toward the ground truth, but jittered typically converges faster, and the noise at 64 samples per pixel with jittered looks closer to what uniform achieves at 128 samples per pixel.</p>
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 6/uniform_s4.png" width="400px"/>
+				  <figcaption>Uniform Random, 4 samples/pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 6/jittered_s4.png" width="400px"/>
+				  <figcaption>Jittered, 4 samples/pixel</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 6/uniform_s16.png" width="400px"/>
+				  <figcaption>Uniform Random, 16 samples/pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 6/jittered_s16.png" width="400px"/>
+				  <figcaption>Jittered, 16 samples/pixel</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part 6/uniform_s64.png" width="400px"/>
+				  <figcaption>Uniform Random, 64 samples/pixel</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part 6/jittered_s64.png" width="400px"/>
+				  <figcaption>Jittered, 64 samples/pixel</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 		
 		<h2>Additional Notes (please remove)</h2>
 		<ul>
