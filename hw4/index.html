@@ -80,13 +80,178 @@
 		</div>
 
 		<h2>Part 2: Simulation via numerical integration</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+		<h3>Default Resting State</h3>
+		<p>
+			With default parameters (density = 15, ks = 5000, damping = 0.2%), the cloth settles into a natural, stable resting position. The two-corner pinned scene shows the cloth hanging cleanly from its two top corners, forming a smooth curved drape with gentle folds along the bottom edge. The four-corner pinned scene stretches the cloth between all four corners, producing a symmetric downward sag at the center — similar to a hammock shape — as gravity pulls the unsupported fabric down while the pinned corners hold their positions.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%202/Task2-Pinned%20in%202%20corners%20default%20state.png" width="400px"/>
+				  <figcaption>pinned2.json: default resting state (density=15, ks=5000, damping=0.2%).</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part%202/Task2-pinned%20in%20four%20corners%20default%20settings.png" width="400px"/>
+				  <figcaption>pinned4.json: default resting state (density=15, ks=5000, damping=0.2%).</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Effect of Spring Constant (ks)</h3>
+		<p>
+			When adjusting ks from 30 to 6000, lower ks values produce a cloth that feels softer and more easily deformable. The fabric stretches more, sags under gravity, and doesn't hold its shape well — the springs are weak and don't strongly pull the cloth back to its original configuration. At ks = 30, the top edge of the cloth curves dramatically downward between the two pinned corners, forming a wide arch, and the fabric gathers in loose folds toward the bottom.
+		</p>
+		<p>
+			As ks increases, the cloth becomes more stiff and structured since the springs resist deformation more aggressively. At ks = 6000, the top edge is nearly flat and the cloth hangs almost rigidly from the pins with far less drape. However, the behavior at this value is also less stable: the strong spring forces cause the system to overshoot its rest positions, leading to noticeable oscillations and rippling during motion. So while higher ks corresponds to higher stiffness in theory, in practice extremely high values introduce oscillations that make the cloth look dynamic and wavy rather than rigid.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%202/task2-ks30-image.png" width="400px"/>
+				  <figcaption>Low ks (30): cloth sags heavily with a wide arch at the top, very soft and deformable.</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part%202/task2-ksat6000-image.png" width="400px"/>
+				  <figcaption>High ks (6000): cloth is stiff, top edge nearly flat, but prone to oscillations during motion.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Effect of Density</h3>
+		<p>
+			Lower density values produce a much lighter cloth. It falls more slowly and carries less momentum, so it settles quickly and doesn't swing or overshoot as much. At 2 g/cm², the cloth hangs nearly straight down from the two pins with very little sag — the fabric barely responds to gravity.
+		</p>
+		<p>
+			As density increases, the cloth becomes heavier and falls more forcefully under gravity. At 30 g/cm², the cloth builds significantly more momentum during the fall, producing a deep, asymmetric drape as the heavy fabric pulls strongly downward. The bottom portion shifts and gathers under its own weight before settling.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%202/low-density(2%20g%3Acm%5E2)%20at%20resting%20state.png" width="400px"/>
+				  <figcaption>Low density (2 g/cm²): cloth is light, hangs nearly straight with minimal sag.</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part%202/high%20desnity%20(30%20g%3Acm%5E2)%20at%20resting%20state.png" width="400px"/>
+				  <figcaption>High density (30 g/cm²): cloth is heavy, falls forcefully with a deep asymmetric drape.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Effect of Damping</h3>
+		<p>
+			Lower damping values allow the cloth to retain more of its kinetic energy over time. The cloth continues to oscillate and ripple long after the initial drop — folds and waves that develop during the fall persist instead of dying out.
+		</p>
+		<p>
+			Higher damping causes motion to die out much faster. The cloth settles into a clean, flat resting shape quickly — oscillations are suppressed early, so the final state appears smooth and stable without visible wrinkles from the motion. As shown below, at a damping value of 7.747% the cloth is already settling into a stable, hammock-like shape mid-simulation with minimal surface disturbance.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%202/damp%20cloth%20falling%20in%20action%20.png" width="400px"/>
+				  <figcaption>High damping (7.747%): motion dies out quickly, cloth settles smoothly with minimal oscillation.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Final Resting State: pinned4.json</h3>
+		<p>
+			Below is the shaded cloth from <code>scene/pinned4.json</code> in its final resting state using default parameters (density = 15, ks = 5000, damping = 0.2%). The four pinned corners hold the cloth taut at the edges while the center sags symmetrically downward under gravity, producing the characteristic hammock-like curvature.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%202/Task2-pinned%20in%20four%20corners%20default%20settings.png" width="600px"/>
+				  <figcaption>pinned4.json final resting state with default parameters.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 3: Handling collisions with other objects</h2>
 		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
 		<h2>Part 4: Handling self-collisions</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+
+		<h3>Implementation</h3>
+		<p>
+			To handle self-collisions efficiently, we implemented spatial hashing — a technique that partitions 3D space into fixed-size boxes and groups point masses by which box they occupy, reducing the collision check from O(n²) to roughly O(n).
+		</p>
+		<p>
+			<b>hash_position</b>: Each point mass position is mapped to a unique float key by first computing box dimensions w = 3 * width / num_width_points, h = 3 * height / num_height_points, and t = max(w, h). The position is then truncated to the nearest box by flooring each coordinate divided by the box dimension. A unique hash is computed from these truncated coordinates using large prime multipliers to minimize collisions.
+		</p>
+		<p>
+			<b>build_spatial_map</b>: At the start of each simulation step, the spatial map is cleared and rebuilt by iterating over all point masses, hashing their positions with hash_position, and inserting each into the corresponding bucket in the map.
+		</p>
+		<p>
+			<b>self_collide</b>: For each point mass, we look up all candidates sharing the same spatial bucket. For each candidate (excluding the point mass itself), we check if the two are within 2 * thickness of each other. If so, we compute a correction vector that would push them exactly 2 * thickness apart along the vector between them. The final correction applied to the point mass is the average of all such pairwise corrections, scaled down by simulation_steps to avoid sudden large position jumps.
+		</p>
+
+		<h3>Cloth Falling and Folding on Itself</h3>
+		<p>
+			The sequence below shows the cloth at three stages of the self-collision simulation: the initial fold as the bottom of the cloth first contacts itself, mid-fall as the upper portion cascades down and folds accumulate, and the final resting state where the cloth lies crumpled on the ground without any clipping.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%204/task%204%20collision%20beginning%20falling%20.png" width="400px"/>
+				  <figcaption>Early: cloth begins to fold as the bottom hits the ground plane and starts colliding with itself.</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="Part%204/task%204%20collision%20mid%20falling%20.png" width="400px"/>
+				  <figcaption>Mid-fall: upper cloth cascades down, folding over the already-grounded portion; self-collisions prevent clipping.</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="Part%204/task4%20collision%20end%20resting%20stage.png" width="400px"/>
+				  <figcaption>Resting state: cloth fully settled on the ground in a crumpled, folded shape with no self-intersection.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<h3>Varying Density and ks</h3>
+		<p>
+			<b>Density</b>: At lower density the cloth is lighter and falls more slowly, so it folds more gently with fewer and shallower creases before settling. At higher density, the cloth has more momentum during the fall and compresses more aggressively on impact — the self-collisions are more forceful and the resulting pile of fabric is more compact and deeply folded.
+		</p>
+		<p>
+			<b>ks</b>: With a low ks, the cloth is soft and flexible, causing it to fold tightly over itself with many small, fine creases as it collapses. A high ks makes the cloth stiffer, so it resists tight folding — the folds that form are broader and the cloth tends to stack in larger, flatter sections rather than crumpling into dense wrinkles.
+		</p>
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="clothsim.png" width="400px"/>
+				  <figcaption>Low density: gentle fall, fewer creases, lighter pile.</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="clothsim.png" width="400px"/>
+				  <figcaption>High density: heavy fall, more aggressive folds, compact pile.</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="clothsim.png" width="400px"/>
+				  <figcaption>Low ks: soft cloth folds tightly with many fine creases.</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="clothsim.png" width="400px"/>
+				  <figcaption>High ks: stiff cloth folds in broader sections with fewer wrinkles.</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
 
 		<h2>Part 5: Shaders</h2>
 		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
