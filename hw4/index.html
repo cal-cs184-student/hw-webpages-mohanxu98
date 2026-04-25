@@ -39,6 +39,15 @@
 		Link to GitHub repository: <a href="https://github.com/mohanxu98/cs184-hw4-booba">https://github.com/mohanxu98/cs184-hw4-booba</a>
 
 		<h2>Overview</h2>
+		<p>
+			In this homework we built a real-time cloth simulator from scratch. We started by modeling the cloth as a grid of point masses connected by structural, shearing, and bending springs, then implemented Verlet integration to step the simulation forward in time — applying gravity, spring correction forces, and a Provot deformation constraint to keep the cloth physically plausible. From there we added collision handling with external objects (spheres and planes) and self-collision detection using spatial hashing, which lets the cloth fold realistically on itself without clipping.
+		</p>
+		<p>
+			The second half of the project focused on GPU shading. We implemented a full Blinn-Phong shader, texture mapping, bump mapping, displacement mapping, and an environment-mapped mirror shader. For extra credit we wrote a custom animated shader that combines cel shading, scrolling scanlines, a rainbow Fresnel rim, vertex-level glitch displacement, and a neon bloom pass to produce a holographic effect.
+		</p>
+		<p>
+			The most interesting thing we learned was how much the order of operations matters in a physics simulation — small changes to when constraints and collisions are applied can make the difference between stable, realistic behavior and a cloth that explodes or passes through geometry. We also found spatial hashing to be an elegant solution to what would otherwise be an O(n²) self-collision problem, and it was satisfying to see how GPU parallelism makes complex per-pixel shading computationally viable in real time.
+		</p>
 
 		<h2>Part 1: Masses and springs</h2>
 		<p>
