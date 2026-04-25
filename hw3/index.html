@@ -117,6 +117,21 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 
 		<h2>Part 3: Direct Illumination</h2>
 
+		<h3>Uniform Hemisphere Sampling Implementation</h3>
+		<p>For uniform hemisphere sampling, I estimated direct lighting at each surface intersection by randomly 
+			sampling directions uniformly over the hemisphere above the hit point. I first constructed a local 
+			coordinate frame using make_coord_space whose z-axis aligns with the surface normal, so incoming sample 
+			directions could be generated in object space with the normal pointing upward. For each of the 
+			num_samples = scene->lights.size() * ns_area_light sampled directions, I used 
+			hemisphereSampler->get_sample() to get a random object-space direction, transformed it into world space using the o2w matrix, and cast a shadow ray from the hit point with min_t = EPS_F to avoid self-intersection. If that ray intersected an emissive surface, I retrieved the emission using get_emission() and treated it as incoming radiance. I then accumulated the Monte Carlo estimator using the diffuse BSDF value from isect.bsdf->f(w_out, wi_obj), the cosine term wi_obj.z (since the normal is aligned with z in object space), and the uniform hemisphere pdf of 1/(2π), then averaged over all samples. This method is unbiased but inefficient   because it samples the entire hemisphere without regard to where the lights actually are, most sampled directions miss the light source entirely and contribute zero illumination, leading to high variance and noisy renders.</p>
+
+		<h3>Light Importance Sampling Implementation</h3>
+		<p>For light importance sampling, I estimated direct lighting by sampling the scene's light sources directly instead of sampling arbitrary hemisphere directions. At each hit point, I again constructed a local coordinate frame and computed the outgoing direction w_out in object space. I then looped over every light in the scene using scene->lights and sampled directions toward that light using light->sample_L, which returns the incoming radiance, sampled world-space direction, distance to the light, and the corresponding pdf. For delta lights such as point lights I used one sample since they have no area, while for area lights I used ns_area_light samples. After converting the sampled light direction into object space using the w2o matrix, I skipped samples where cos_theta <= 0 since the light is behind the surface. I then cast a shadow ray toward the light with min_t = EPS_F and max_t = dist_to_light - EPS_F so that only occluders between the surface and the light would count as blocking. If the shadow ray was unoccluded, meaning bvh->intersect returned false, I accumulated the reflected contribution using the BSDF, cosine term, and light-sampling pdf, then averaged across samples per light and summed contributions over all lights. Because this method concentrates samples directly on the actual light sources, it uses samples far more efficiently and converges much faster than uniform hemisphere sampling.</p>
+
+		<h3>Comparison Between Uniform Hemisphere Sampling and Light Importance Sampling</h3>
+		<p>On CBspheres_lambertian, the difference between uniform hemisphere sampling and light importance sampling was immediately obvious. With uniform hemisphere sampling, the image was noisy almost everywhere   the spheres, walls, and floor were all covered in heavy speckles because most randomly sampled hemisphere directions never hit the ceiling area light and contributed zero radiance. The shadow regions underneath the spheres were particularly poorly defined, appearing as random dark patches rather than coherent soft shadows. With light importance sampling, the image converged much faster because every sample was aimed directly at the actual light source. The walls and upper portions of the scene became smooth almost immediately, and the soft shadows beneath the spheres were far more well-defined even at the same sample count. The remaining noise in the importance sampled render was concentrated in the shadow penumbra regions, which is expected since those regions require more samples to accurately estimate the partial occlusion. Overall, light importance sampling produced a dramatically cleaner result for the same computational budget, demonstrating that concentrating samples where they contribute most   directly on the lights   is far more efficient than uniform hemisphere sampling.</p>
+
+
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
 			  <tr>
@@ -131,7 +146,8 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 			  </tr>
 			</table>
 		</div>
-
+		<h3>Noise Level Comparison With 1, 4, 16, and 64 Light Rays</h3>
+		<p>Using light importance sampling with 1 sample per pixel (-s 1) on CBspheres_lambertian, increasing the number of light rays per shading point via the -l flag produced a clear and consistent reduction in noise throughout the scene. With 1 light ray (-l 1), the image was heavily speckled across the spheres, floor, and walls, and the soft shadow regions beneath the spheres were poorly defined with high variance. At 4 light rays (-l 4), the noise decreased substantially   the walls and upper scene became noticeably smoother and the shadow shapes became more coherent, though significant variance remained on the floor and lower portions of the spheres. At 16 light rays (-l 16), the image stabilized further with smoother shading across most surfaces and a more accurately rendered soft shadow penumbra beneath the spheres. At 64 light rays (-l 64), the render was the cleanest of the four, with variance reduced to a low level across the entire scene and the shadow boundaries appearing the most accurate and smooth. These results confirm that increasing light samples significantly improves direct lighting quality, with the largest perceptual gains at lower sample counts and more gradual improvements as the number of light rays increases further.</p>
 		<h3>Light Sampling (varying number of light rays)</h3>
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
@@ -160,6 +176,16 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 
 		<h2>Part 4: Global Illumination</h2>
 
+		<h3>Implementation of the Indirect Lighting Function</h3>
+		<p>To implement indirect lighting, I extended the at_least_one_bounce_radiance function to recursively trace rays beyond the first bounce. At each intersection point, I first constructed a local coordinate frame with the surface normal aligned to the z-axis, computed the hit point and outgoing direction in object space. I then always added the direct one-bounce contribution using one_bounce_radiance as the base of the accumulated radiance. To simulate additional bounces, I sampled a new incoming direction using the BSDF's sample_f function, which returns a cosine-weighted direction in object space along with the corresponding pdf. I converted this direction to world space, constructed a new ray from the hit point with min_t = EPS_F and depth decremented by one, and recursively called at_least_one_bounce_radiance on the new intersection if one existed. The indirect contribution was accumulated using the full reflection equation   multiplying the BSDF value, the recursive radiance, and the cosine term, then dividing by the pdf. To support the isAccumBounces flag for isolating individual bounces, I only added the direct one-bounce contribution when isAccumBounces was true or when the ray was at the final bounce depth. For Russian Roulette termination, I used a continuation probability of 0.65 and always traced at least one indirect bounce when the ray depth equaled max_ray_depth, applying the roulette only for subsequent bounces and normalizing by the continuation probability accordingly.</p>
+
+		<h3>Global Illumination Renders (1024 Samples Per Pixel)</h3>
+		<p>The following images show CBspheres_lambertian.dae and CBbunny.dae rendered with full global illumination using 1024 samples per pixel and max_ray_depth set to 5. With both direct and indirect illumination combined, the scenes show realistic soft shadows, color bleeding from the red and blue walls onto the spheres and bunny, and light reaching areas that would be completely dark under direct lighting alone such as the underside of the spheres and the back wall behind the bunny.</p>
+
+		<h3>Direct Illumination Only vs Indirect Illumination Only</h3>
+		<p>The following images compare CBspheres_lambertian.dae rendered with only direct illumination versus only indirect illumination, both at 1024 samples per pixel. The direct-only image captures the primary illumination from the ceiling area light and clearly defines the basic shape of the spheres, walls, and floor. The brightest regions are the surfaces that directly face the light, while the lower portions of the spheres and the shadowed regions remain very dark. In contrast, the indirect-only image is much dimmer and significantly noisier, since all of the illumination comes from bounced light rather than direct visibility to the source. However, this image reveals the global illumination effects that are missing from the direct-only result, especially the red and blue color bleeding from the side walls onto the spheres and nearby surfaces. Overall, the direct-only render provides the main shading structure of the scene, while the indirect-only render contributes the softer interreflection and color transfer that make the full global illumination result look more realistic.</p>
+
+
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
 			  <tr>
@@ -186,137 +212,143 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 		</div>
 
 		<h3>Accumulated Bounces (isAccumBounces=false)</h3>
+		<p>The following images show CBbunny.dae rendered with isAccumBounces=false and max_ray_depth set to 0, 1, 2, 3, 4, and 5 using 1024 samples per pixel. Each image isolates only the contribution of exactly the Nth bounce of light. At m=0, only the light source itself is visible against a black background. At m=1, only direct lighting is shown   the bunny and walls are lit by the ceiling light with hard shadow boundaries. At m=2, the image is noticeably dimmer and shows the light that has bounced exactly twice   this fills in the dark shadow regions under the bunny and on surfaces facing away from the light, and introduces subtle color bleeding from the red and blue walls. At m=3, the image is dimmer still and shows even softer interreflection, further filling in dark corners and contributing additional color bleeding. The 2nd and 3rd bounce contributions are particularly important compared to rasterization because rasterization cannot simulate these inter-surface light transfers at all without expensive precomputed approximations like ambient occlusion or light maps. Path tracing captures them naturally through recursion. At m=4 and m=5, the contributions become very dim and the differences are subtle, but they continue to add realism to corner regions and shadowed surfaces.</p>
+
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/false/m0.png" width="400px"/>
-				  <figcaption>Max Ray Depth 0</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/false/m1.png" width="400px"/>
-				  <figcaption>Max Ray Depth 1</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/false/m2.png" width="400px"/>
-				  <figcaption>Max Ray Depth 2</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/false/m4.png" width="400px"/>
-				  <figcaption>Max Ray Depth 4</figcaption>
-				</td>
-			  </tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/false/m0.png" width="400px"/>
+						<figcaption>Max Ray Depth 0</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/false/m1.png" width="400px"/>
+						<figcaption>Max Ray Depth 1</figcaption>
+					</td>
+				</tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/false/m2.png" width="400px"/>
+						<figcaption>Max Ray Depth 2</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/false/m4.png" width="400px"/>
+						<figcaption>Max Ray Depth 4</figcaption>
+					</td>
+				</tr>
 			</table>
 		</div>
-
+		
 		<h3>Accumulated Bounces (isAccumBounces=true)</h3>
+		<p>The following images show CBbunny.dae rendered with isAccumBounces=true and max_ray_depth set to 0, 1, 2, 3, 4, and 5 using 1024 samples per pixel. Each image accumulates all bounces up to and including the Nth bounce. At m=0 only the light source is visible. At m=1 direct lighting appears and the scene becomes recognizable. At m=2 indirect light fills in the shadowed regions and the scene looks significantly more realistic. At m=3 the image is very close to the final result with soft shadows and color bleeding fully visible. At m=4 and m=5 the changes become increasingly subtle as higher bounces contribute diminishing amounts of energy, but the image continues to become slightly brighter and more accurate in the darkest regions.</p>
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m0.png" width="400px"/>
-				  <figcaption>Max Ray Depth 0</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m1.png" width="400px"/>
-				  <figcaption>Max Ray Depth 1</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m2.png" width="400px"/>
-				  <figcaption>Max Ray Depth 2</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m3.png" width="400px"/>
-				  <figcaption>Max Ray Depth 3</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m4.png" width="400px"/>
-				  <figcaption>Max Ray Depth 4</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/AccumBounce/true/m5.png" width="400px"/>
-				  <figcaption>Max Ray Depth 5</figcaption>
-				</td>
-			  </tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m0.png" width="400px"/>
+						<figcaption>Max Ray Depth 0</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m1.png" width="400px"/>
+						<figcaption>Max Ray Depth 1</figcaption>
+					</td>
+				</tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m2.png" width="400px"/>
+						<figcaption>Max Ray Depth 2</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m3.png" width="400px"/>
+						<figcaption>Max Ray Depth 3</figcaption>
+					</td>
+				</tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m4.png" width="400px"/>
+						<figcaption>Max Ray Depth 4</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/AccumBounce/true/m5.png" width="400px"/>
+						<figcaption>Max Ray Depth 5</figcaption>
+					</td>
+				</tr>
 			</table>
 		</div>
-
+		
 		<h3>Russian Roulette (varying max ray depth)</h3>
+		<p>The following images show CBbunny.dae rendered with Russian Roulette termination and max_ray_depth set to 0, 1, 2, 3, 4, and 100 using 1024 samples per pixel. Russian Roulette provides an unbiased method of random termination by continuing each ray with a fixed continuation probability of 0.65 and normalizing by that probability when a ray continues. At m=0 only the light source is visible. At m=1 direct lighting appears. At m=2 and m=3 indirect light increasingly fills the scene. At m=4 the result is nearly indistinguishable from the converged solution. At m=100, the Russian Roulette termination means that rays rarely survive to very high bounce counts in practice, so the image looks nearly identical to m=4 and m=5   the expected number of surviving bounces is controlled by the continuation probability rather than the hard depth limit, making very high max_ray_depth values safe to use without infinite loops.</p>
+		
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m0.png" width="400px"/>
-				  <figcaption>Max Ray Depth 0</figcaption>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/Russian Roulette/m0.png" width="400px"/>
+						<figcaption>Max Ray Depth 0</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/Russian Roulette/m1.png" width="400px"/>
+						<figcaption>Max Ray Depth 1</figcaption>
+					</td>
+				</tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/Russian Roulette/m2.png" width="400px"/>
+						<figcaption>Max Ray Depth 2</figcaption>
+					</td>
+					<td style="text-align: center;">
+						<img src="Part4/Russian Roulette/m3.png" width="400px"/>
+						<figcaption>Max Ray Depth 3</figcaption>
+					</td>
+				</tr>
+				<tr>
+					<td style="text-align: center;">
+						<img src="Part4/Russian Roulette/m4.png" width="400px"/>
+						<figcaption>Max Ray Depth 4</figcaption>
 				</td>
 				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m1.png" width="400px"/>
-				  <figcaption>Max Ray Depth 1</figcaption>
+					<img src="Part4/Russian Roulette/m100.png" width="400px"/>
+					<figcaption>Max Ray Depth 100</figcaption>
 				</td>
-			  </tr>
-			  <tr>
+			</tr>
+		</table>
+	</div>
+	
+	<h3>Varying Sample-Per-Pixel Rates</h3>
+	<p>The following images show CBspheres_lambertian.dae rendered with 4 light rays and sample-per-pixel rates of 1, 2, 4, 8, 16, 64, and 1024. At 1 sample per pixel the image is extremely noisy with heavy grain across every surface, making the scene barely recognizable. At 2 and 4 samples per pixel the noise begins to reduce but remains very prominent, particularly in the shadow regions and on the surfaces of the spheres. At 8 and 16 samples per pixel the image becomes noticeably cleaner and the overall structure of the scene is clearly visible, though fine-grained noise remains on the walls and floor. At 64 samples per pixel the image looks largely clean with only minor residual noise in the darkest shadow regions. At 1024 samples per pixel the image has converged almost completely, with smooth shading across all surfaces, well-defined soft shadows, and clear color bleeding from the red and blue walls. These results demonstrate that noise in Monte Carlo path tracing decreases proportionally to the square root of the number of samples   quadrupling the sample count halves the noise   meaning very high sample counts are required to achieve a fully clean result.</p>
+	<div style="display: flex; flex-direction: column; align-items: center;">
+		<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			<tr>
 				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m2.png" width="400px"/>
-				  <figcaption>Max Ray Depth 2</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m3.png" width="400px"/>
-				  <figcaption>Max Ray Depth 3</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m4.png" width="400px"/>
-				  <figcaption>Max Ray Depth 4</figcaption>
+					<img src="Part4/samples/s1.png" width="400px"/>
+					<figcaption>1 Sample/Pixel</figcaption>
 				</td>
 				<td style="text-align: center;">
-				  <img src="Part4/Russian Roulette/m100.png" width="400px"/>
-				  <figcaption>Max Ray Depth 100</figcaption>
+					<img src="Part4/samples/s2.png" width="400px"/>
+					<figcaption>2 Samples/Pixel</figcaption>
 				</td>
-			  </tr>
-			</table>
-		</div>
-
-		<h3>Varying Sample-Per-Pixel Rates</h3>
-		<div style="display: flex; flex-direction: column; align-items: center;">
-			<table style="width: 100%; text-align: center; border-collapse: collapse;">
-			  <tr>
+			</tr>
+			<tr>
 				<td style="text-align: center;">
-				  <img src="Part4/samples/s1.png" width="400px"/>
-				  <figcaption>1 Sample/Pixel</figcaption>
+					<img src="Part4/samples/s4.png" width="400px"/>
+					<figcaption>4 Samples/Pixel</figcaption>
 				</td>
 				<td style="text-align: center;">
-				  <img src="Part4/samples/s2.png" width="400px"/>
-				  <figcaption>2 Samples/Pixel</figcaption>
+					<img src="Part4/samples/s8.png" width="400px"/>
+					<figcaption>8 Samples/Pixel</figcaption>
 				</td>
-			  </tr>
-			  <tr>
+			</tr>
+			<tr>
 				<td style="text-align: center;">
-				  <img src="Part4/samples/s4.png" width="400px"/>
-				  <figcaption>4 Samples/Pixel</figcaption>
-				</td>
-				<td style="text-align: center;">
-				  <img src="Part4/samples/s8.png" width="400px"/>
-				  <figcaption>8 Samples/Pixel</figcaption>
-				</td>
-			  </tr>
-			  <tr>
-				<td style="text-align: center;">
-				  <img src="Part4/samples/s16.png" width="400px"/>
-				  <figcaption>16 Samples/Pixel</figcaption>
+					<img src="Part4/samples/s16.png" width="400px"/>
+					<figcaption>16 Samples/Pixel</figcaption>
 				</td>
 				<td style="text-align: center;">
-				  <img src="Part4/samples/s64.png" width="400px"/>
-				  <figcaption>64 Samples/Pixel</figcaption>
+					<img src="Part4/samples/s64.png" width="400px"/>
+					<figcaption>64 Samples/Pixel</figcaption>
 				</td>
-			  </tr>
-			  <tr>
+			</tr>
+			<tr>
 				<td style="text-align: center;">
 				  <img src="Part4/samples/s1024.png" width="400px"/>
 				  <figcaption>1024 Samples/Pixel</figcaption>
@@ -327,6 +359,13 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 
 		<h2>Part 5: Adaptive Sampling</h2>
 
+		<p>Adaptive sampling is a technique that avoids using a fixed high number of samples for every pixel by concentrating samples in the parts of the image that are harder to render   regions with high variance such as shadow boundaries, complex geometry, and areas with indirect lighting   while terminating early for pixels that converge quickly such as flat uniformly lit surfaces. This is more efficient than uniform sampling because easy pixels waste samples if forced to use the same count as difficult pixels. The core idea is to track running statistics about the illuminance of samples taken so far and use a statistical convergence test to decide when a pixel has received enough samples. Specifically, we compute a 95 percent confidence interval half-width I = 1.96 * sigma / sqrt(n), where sigma is the standard deviation of the illuminance samples and n is the number of samples taken so far. If I is less than or equal to maxTolerance * mu, where mu is the mean illuminance and maxTolerance is 0.05 by default, we conclude the pixel has converged and stop sampling it. This gives an unbiased and statistically principled stopping criterion that naturally allocates more samples to difficult regions and fewer to easy ones.</p>
+
+<h3>Adaptive Sampling Implementation</h3>
+<p>I implemented adaptive sampling inside the raytrace_pixel function. Rather than always taking exactly ns_aa samples per pixel, I maintained three running variables: s1 as the sum of illuminance values, s2 as the sum of squared illuminance values, and n as the actual number of samples taken so far. For each new sample, I generated a camera ray with a jittered pixel coordinate, traced it through the scene using est_radiance_global_illumination, and added the resulting radiance to the running sum. I then computed the illuminance of the sample using L.illum() and updated s1 and s2 accordingly. To avoid checking convergence after every single sample, which would be expensive, I checked the convergence criterion only every samplesPerBatch samples. At each check, I computed the mean as mu = s1 / n and the variance as sigma_sq = (1 / (n - 1)) * (s2 - s1 * s1 / n), then computed I = 1.96 * sqrt(sigma_sq) / sqrt(n). If I was less than or equal to maxTolerance * mu, I broke out of the sampling loop early. After the loop, I normalized the accumulated radiance by the actual number of samples taken n rather than ns_aa, updated the sample buffer with the averaged color, and stored the actual sample count in sampleCountBuffer so that the sampling rate visualization image could be generated correctly showing which pixels required more or fewer samples.</p>
+
+<h3>Adaptive Sampling Results</h3>
+<p>The following images show two scenes rendered with adaptive sampling using at least 2048 samples per pixel, 1 sample per light, and max ray depth of 5. For each scene, the left image shows the noise-free rendered result and the right image shows the sampling rate visualization where blue indicates pixels that converged quickly with few samples and red indicates pixels that required many samples to converge. In CBspheres_lambertian.dae, the sampling rate image clearly shows that the flat uniformly lit regions of the walls and ceiling converged very quickly and are shown in blue, while the shadow regions beneath the spheres, the sphere surfaces near the terminator between lit and shadowed regions, and the areas with strong color bleeding from the red and blue walls required significantly more samples and appear in red and orange. In CBbunny.dae, a similar pattern is visible   the flat background walls converged quickly while the detailed geometry of the bunny surface, particularly the shadow regions underneath and the silhouette edges, required many more samples. These results demonstrate that adaptive sampling successfully concentrates computational effort where it is most needed, producing a noise-free result while using fewer total samples than a uniform high sample count would require.</p>
 		<div style="display: flex; flex-direction: column; align-items: center;">
 			<table style="width: 100%; text-align: center; border-collapse: collapse;">
 			  <tr>
@@ -393,16 +432,6 @@ double sensorY = (2 * y - 1) * tan(vFovRad / 2.0);</code></pre>
 			</table>
 		</div>
 		
-		<h2>Additional Notes (please remove)</h2>
-		<ul>
-			<li>You can also add code if you'd like as so: <code>code code code</code></li>
-			<li>If you'd like to add math equations, 
-				<ul>
-					<li>You can write inline equations like so: \( a^2 + b^2 = c^2 \)</li>
-					<li>You can write display equations like so: \[ a^2 + b^2 = c^2 \]</li>
-				</ul>
-			</li>
-		</ul>
 		</div>
 	</body>
 </html>
